@@ -44,8 +44,12 @@ DB_PATH = os.path.join(DATA_DIR, 'talent.db')
 UPLOAD_DIR = os.path.join(DATA_DIR, 'uploads')
 ALLOWED_EXTENSIONS = {'.xls', '.xlsx'}
 
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+try:
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+except Exception as e:
+    import sys
+    print(f'WARNING: Cannot create directories: {e}', file=sys.stderr)
 
 
 # ============================================================
@@ -2030,7 +2034,12 @@ def api_export():
 # ============================================================
 
 # Initialize database on import (required for gunicorn/production)
-init_db()
+try:
+    init_db()
+except Exception as e:
+    import traceback, sys
+    print('WARNING: Database initialization failed:', file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
