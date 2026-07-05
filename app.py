@@ -2029,8 +2029,10 @@ def api_export():
 # Main
 # ============================================================
 
+# Initialize database on import (required for gunicorn/production)
+init_db()
+
 if __name__ == '__main__':
-    init_db()
     port = int(os.environ.get('PORT', 8080))
     print(f"Database: {DB_PATH}")
     print(f"Starting server at http://0.0.0.0:{port}")
