@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}人才盘点分析系统{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+        body { background-color: #f0f2f5; }
+        .sidebar { background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%); }
+        .nav-item { transition: all 0.2s; }
+        .nav-item:hover { background: rgba(255,255,255,0.1); }
+        .nav-item.active { background: rgba(99,102,241,0.3); border-left: 3px solid #818cf8; }
+        .stat-card { transition: transform 0.2s, box-shadow 0.2s; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
+        .chart-card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .grid-cell { transition: all 0.2s; cursor: pointer; }
+        .grid-cell:hover { transform: scale(1.03); z-index: 10; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        .table-row:hover { background: #f5f7ff; }
+        .modal-overlay { background: rgba(0,0,0,0.5); }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <aside class="sidebar w-60 flex-shrink-0 text-white flex flex-col">
+            <div class="px-6 py-5 border-b border-white/10">
+                <h1 class="text-lg font-bold flex items-center gap-2">
+                    <svg class="w-6 h-6 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                    </svg>
+                    人才盘点系统
+                </h1>
+                <p class="text-xs text-gray-400 mt-1">人才九宫格及梯队情况</p>
+            </div>
+            <nav class="flex-1 py-4">
+                {% if user and user.role == 'hr' %}
+                <a href="{{ url_for('hr_dashboard') }}" class="nav-item flex items-center gap-3 px-6 py-3 text-sm text-gray-300 {% if request.endpoint == 'hr_dashboard' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/></svg>
+                    HR总览
+                </a>
+                {% endif %}
+                <a href="{{ url_for('dept_dashboard') }}" class="nav-item flex items-center gap-3 px-6 py-3 text-sm text-gray-300 {% if request.endpoint == 'dept_dashboard' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    {% if user and user.role == 'hr' %}部门分析{% else %}本部门看板{% endif %}
+                </a>
+                {% if user and user.role == 'hr' %}
+                <a href="{{ url_for('upload_page') }}" class="nav-item flex items-center gap-3 px-6 py-3 text-sm text-gray-300 {% if request.endpoint == 'upload_page' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                    数据上传
+                </a>
+                {% endif %}
+                <a href="{{ url_for('export_page') }}" class="nav-item flex items-center gap-3 px-6 py-3 text-sm text-gray-300 {% if request.endpoint == 'export_page' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    一键导出
+                </a>
+            </nav>
+            <div class="px-6 py-4 border-t border-white/10">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium">{{ user.display_name if user else '' }}</p>
+                        <p class="text-xs text-gray-400">
+                            {% if user and user.role == 'hr' %}HR管理员{% else %}{{ user.dept_category if user else '' }}管理员{% endif %}
+                        </p>
+                    </div>
+                    <a href="{{ url_for('logout') }}" class="text-gray-400 hover:text-white" title="退出登录">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    </a>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

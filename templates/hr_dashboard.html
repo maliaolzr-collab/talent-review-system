@@ -1,0 +1,413 @@
+{% extends 'base.html' %}
+{% block title %}HR总览 - 人才盘点分析系统{% endblock %}
+
+{% block content %}
+<div class="p-6">
+    <!-- Header -->
+    <div class="mb-6">
+        <h2 class="text-2xl font-bold text-gray-800">HR 总览仪表盘</h2>
+        <p class="text-sm text-gray-500 mt-1">全公司人才盘点数据 · 跨部门对比分析</p>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        <div class="stat-card bg-white rounded-xl p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-gray-500">总人数</span>
+                <div class="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-gray-800" id="stat-total">-</p>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-gray-500">部门数</span>
+                <div class="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-gray-800" id="stat-dept">-</p>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-gray-500">平均年龄</span>
+                <div class="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-gray-800" id="stat-age">-</p>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-gray-500">平均司龄(月)</span>
+                <div class="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-gray-800" id="stat-tenure">-</p>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-gray-500">高潜人才</span>
+                <div class="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-gray-800" id="stat-high-potential">-</p>
+        </div>
+    </div>
+
+    <!-- Charts Row 1: Pipeline + Performance -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">人才梯队分布（全公司）</h3>
+            <div id="chart-pipeline" style="height: 320px;"></div>
+        </div>
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">绩效表现分布（全公司）</h3>
+            <div id="chart-performance" style="height: 320px;"></div>
+        </div>
+    </div>
+
+    <!-- Charts Row 2: Category Comparison -->
+    <div class="grid grid-cols-1 gap-6 mb-6">
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">各部门人数与梯队对比</h3>
+            <div id="chart-category-pipeline" style="height: 400px;"></div>
+        </div>
+    </div>
+
+    <!-- Charts Row 3: 9-Box Grid -->
+    <div class="chart-card p-5 mb-6">
+        <h3 class="text-base font-semibold text-gray-700 mb-4">全公司九宫格分布</h3>
+        <div id="nine-box-grid" class="grid grid-cols-4 gap-2 max-w-4xl mx-auto"></div>
+    </div>
+
+    <!-- Charts Row 4: Education + Age -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">学历分布（全公司）</h3>
+            <div id="chart-education" style="height: 320px;"></div>
+        </div>
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">年龄分布（全公司）</h3>
+            <div id="chart-age" style="height: 320px;"></div>
+        </div>
+    </div>
+
+    <!-- Charts Row 5: Category Radar + Person-Position Match -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">各部门人才结构雷达图</h3>
+            <div id="chart-radar" style="height: 380px;"></div>
+        </div>
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">各部门人岗匹配度对比</h3>
+            <div id="chart-match" style="height: 380px;"></div>
+        </div>
+    </div>
+
+    <!-- Department Comparison Table -->
+    <div class="chart-card p-5 mb-6">
+        <h3 class="text-base font-semibold text-gray-700 mb-4">部门明细对比</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200 text-gray-500">
+                        <th class="text-left py-3 px-2 font-medium">大类</th>
+                        <th class="text-left py-3 px-2 font-medium">子部门</th>
+                        <th class="text-right py-3 px-2 font-medium">人数</th>
+                        <th class="text-right py-3 px-2 font-medium">平均年龄</th>
+                        <th class="text-right py-3 px-2 font-medium">人岗匹配</th>
+                    </tr>
+                </thead>
+                <tbody id="dept-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PIPELINE_ORDER = ['第一梯队', '第二梯队', '第三梯队', '第四梯队', '第五梯队', '其他'];
+const PIPELINE_COLORS = ['#eb2f96', '#722ed1', '#1890ff', '#52c41a', '#faad14', '#d9d9d9'];
+
+const GRID_LAYOUT = [
+    [4, 7, 9],
+    [2, 5, 8],
+    [1, 3, 6]
+];
+const GRID_LABELS = {
+    1: {name: '问题员工', perf: '低', pot: '低', color: '#ff4d4f'},
+    2: {name: '差距员工', perf: '低', pot: '中', color: '#fa8c16'},
+    3: {name: '一般员工', perf: '中', pot: '低', color: '#faad14'},
+    4: {name: '待发展者', perf: '低', pot: '高', color: '#fa8c16'},
+    5: {name: '中坚力量', perf: '中', pot: '中', color: '#52c41a'},
+    6: {name: '熟练员工', perf: '高', pot: '低', color: '#1890ff'},
+    7: {name: '潜力之星', perf: '中', pot: '高', color: '#722ed1'},
+    8: {name: '绩效之星', perf: '高', pot: '中', color: '#13c2c2'},
+    9: {name: '超级明星', perf: '高', pot: '高', color: '#eb2f96'},
+};
+
+const CATEGORY_COLORS = {
+    '印染': '#ff7875', '服装': '#36cfc9', '针织': '#b37feb',
+    '辅料': '#ffc53d', '总部': '#69b1ff'
+};
+
+// Fetch all data
+async function loadData() {
+    const [statsRes, gridRes, catRes, deptRes, ageRes, pipelineRes] = await Promise.all([
+        fetch('/api/stats/overview'),
+        fetch('/api/stats/grid'),
+        fetch('/api/stats/category-summary'),
+        fetch('/api/stats/department-comparison'),
+        fetch('/api/stats/age-distribution'),
+        fetch('/api/stats/pipeline'),
+    ]);
+    const stats = await statsRes.json();
+    const grid = await gridRes.json();
+    const categories = await catRes.json();
+    const depts = await deptRes.json();
+    const age = await ageRes.json();
+    const pipeline = await pipelineRes.json();
+
+    renderStats(stats);
+    renderPipeline(stats);
+    renderPerformance(stats);
+    renderCategoryPipeline(pipeline);
+    renderNineBoxGrid(grid);
+    renderEducation(stats);
+    renderAge(age);
+    renderRadar(categories);
+    renderMatch(depts);
+    renderDeptTable(depts);
+}
+
+function renderStats(stats) {
+    document.getElementById('stat-total').textContent = stats.total_employees;
+    document.getElementById('stat-dept').textContent = stats.dept_count;
+    document.getElementById('stat-age').textContent = stats.avg_age;
+    document.getElementById('stat-tenure').textContent = stats.avg_tenure_months;
+
+    const highPot = (stats.grid_dist['7'] || 0) + (stats.grid_dist['9'] || 0) + (stats.grid_dist['4'] || 0);
+    document.getElementById('stat-high-potential').textContent = highPot;
+}
+
+function renderPipeline(stats) {
+    const chart = echarts.init(document.getElementById('chart-pipeline'));
+    const data = PIPELINE_ORDER.map(p => stats.pipeline_dist[p] || 0);
+    chart.setOption({
+        tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}},
+        grid: {left: '3%', right: '4%', bottom: '3%', containLabel: true},
+        xAxis: {type: 'category', data: PIPELINE_ORDER, axisLabel: {color: '#666'}},
+        yAxis: {type: 'value', axisLabel: {color: '#666'}},
+        series: [{
+            type: 'bar',
+            data: data.map((v, i) => ({value: v, itemStyle: {color: PIPELINE_COLORS[i]}})),
+            barWidth: '50%',
+            label: {show: true, position: 'top', color: '#333'}
+        }]
+    });
+}
+
+function renderPerformance(stats) {
+    const chart = echarts.init(document.getElementById('chart-performance'));
+    const order = ['A', 'B', 'C'];
+    const colors = ['#52c41a', '#faad14', '#ff4d4f'];
+    const data = order.filter(p => stats.perf_dist[p]).map((p, i) => ({
+        name: p, value: stats.perf_dist[p], itemStyle: {color: colors[i]}
+    }));
+    chart.setOption({
+        tooltip: {trigger: 'item', formatter: '{b}: {c}人 ({d}%)'},
+        legend: {bottom: 0, left: 'center'},
+        series: [{
+            type: 'pie', radius: ['40%', '70%'], center: ['50%', '45%'],
+            data: data,
+            label: {formatter: '{b}\n{c}人', color: '#333'},
+            itemStyle: {borderRadius: 6, borderColor: '#fff', borderWidth: 2}
+        }]
+    });
+}
+
+function renderCategoryPipeline(pipeline) {
+    const chart = echarts.init(document.getElementById('chart-category-pipeline'));
+    const cats = Object.keys(pipeline);
+    const series = PIPELINE_ORDER.map((p, i) => ({
+        name: p, type: 'bar', stack: 'total',
+        data: cats.map(c => pipeline[c][p] || 0),
+        itemStyle: {color: PIPELINE_COLORS[i]},
+        emphasis: {focus: 'series'}
+    }));
+    chart.setOption({
+        tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}},
+        legend: {top: 0, left: 'center', textStyle: {fontSize: 11}},
+        grid: {left: '3%', right: '4%', top: 40, bottom: 10, containLabel: true},
+        xAxis: {type: 'category', data: cats, axisLabel: {color: '#666'}},
+        yAxis: {type: 'value', axisLabel: {color: '#666'}},
+        series: series
+    });
+}
+
+function renderNineBoxGrid(grid) {
+    const container = document.getElementById('nine-box-grid');
+
+    let html = '<div></div>';
+    html += '<div class="text-center text-xs font-medium text-gray-500 py-2">需要改善<br><span class="text-gray-400">低/C:&lt;60</span></div>';
+    html += '<div class="text-center text-xs font-medium text-gray-500 py-2">符合期望<br><span class="text-gray-400">中/B:60-80</span></div>';
+    html += '<div class="text-center text-xs font-medium text-gray-500 py-2">超出期望<br><span class="text-gray-400">高/A:≥80</span></div>';
+
+    const rowLabels = [
+        {label: '高潜力', color: '#722ed1'},
+        {label: '中潜力', color: '#52c41a'},
+        {label: '低潜力', color: '#8c8c8c'}
+    ];
+
+    GRID_LAYOUT.forEach((row, rowIdx) => {
+        html += `<div class="flex items-center justify-center text-xs font-medium py-2" style="color:${rowLabels[rowIdx].color}; writing-mode:vertical-lr;">${rowLabels[rowIdx].label}</div>`;
+        row.forEach(gridPos => {
+            const cell = grid[String(gridPos)] || {count: 0, name: '', color: '#d9d9d9'};
+            const opacity = cell.count > 0 ? 1 : 0.3;
+            html += `
+                <div class="grid-cell rounded-lg p-3 border-2" style="border-color:${cell.color}; background:${cell.color}15; opacity:${opacity}" onclick="showGridDetail(${gridPos})">
+                    <div class="text-center">
+                        <span class="text-xs text-gray-500">${gridPos}. ${cell.name}</span>
+                        <p class="text-2xl font-bold mt-1" style="color:${cell.color}">${cell.count}</p>
+                        <p class="text-xs text-gray-400">人</p>
+                    </div>
+                </div>`;
+        });
+    });
+
+    container.innerHTML = html;
+}
+
+function showGridDetail(gridPos) {
+    window.location.href = `/dept-dashboard?grid=${gridPos}`;
+}
+
+function renderEducation(stats) {
+    const chart = echarts.init(document.getElementById('chart-education'));
+    const entries = Object.entries(stats.edu_dist).sort((a, b) => b[1] - a[1]);
+    const eduOrder = ['硕士研究生', '本科', '大专', '高中/高职/中专', '初中', '小学'];
+    entries.sort((a, b) => {
+        const ia = eduOrder.indexOf(a[0]), ib = eduOrder.indexOf(b[0]);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+    chart.setOption({
+        tooltip: {trigger: 'item', formatter: '{b}: {c}人 ({d}%)'},
+        legend: {bottom: 0, left: 'center', textStyle: {fontSize: 11}},
+        series: [{
+            type: 'pie', radius: ['35%', '65%'], center: ['50%', '45%'],
+            data: entries.map(([k, v]) => ({name: k, value: v})),
+            label: {formatter: '{b}\n{c}人', color: '#333', fontSize: 11},
+            itemStyle: {borderRadius: 4, borderColor: '#fff', borderWidth: 2}
+        }]
+    });
+}
+
+function renderAge(age) {
+    const chart = echarts.init(document.getElementById('chart-age'));
+    chart.setOption({
+        tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}},
+        grid: {left: '3%', right: '4%', bottom: '3%', containLabel: true},
+        xAxis: {type: 'category', data: age.map(a => a.label), axisLabel: {color: '#666', rotate: 0}},
+        yAxis: {type: 'value', axisLabel: {color: '#666'}},
+        series: [{
+            type: 'bar', data: age.map(a => a.count),
+            itemStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    {offset: 0, color: '#69b1ff'}, {offset: 1, color: '#1890ff'}
+                ])
+            },
+            barWidth: '60%',
+            label: {show: true, position: 'top', color: '#333'}
+        }]
+    });
+}
+
+function renderRadar(categories) {
+    const chart = echarts.init(document.getElementById('chart-radar'));
+    const indicators = [
+        {name: '总人数', max: Math.max(...categories.map(c => c.total)) * 1.1},
+        {name: '高潜占比', max: 100},
+        {name: '高绩效占比', max: 100},
+        {name: '平均人岗匹配', max: 10},
+    ];
+    const series = [{
+        type: 'radar',
+        data: categories.map(c => {
+            const highPot = ((c.grid_dist['7']||0) + (c.grid_dist['9']||0) + (c.grid_dist['4']||0)) / c.total * 100;
+            const highPerf = (c.perf_dist['A']||0) / c.total * 100;
+            return {
+                name: c.category,
+                value: [c.total, Math.round(highPot), Math.round(highPerf), c.avg_match],
+                itemStyle: {color: CATEGORY_COLORS[c.category]},
+                areaStyle: {opacity: 0.15}
+            };
+        })
+    }];
+    chart.setOption({
+        tooltip: {trigger: 'item'},
+        legend: {bottom: 0, left: 'center'},
+        radar: {
+            indicator: indicators,
+            center: ['50%', '50%'],
+            radius: '60%',
+            splitArea: {areaStyle: {color: ['#fafafa', '#fff']}}
+        },
+        series: series
+    });
+}
+
+function renderMatch(depts) {
+    const chart = echarts.init(document.getElementById('chart-match'));
+    const catMap = {};
+    depts.forEach(d => {
+        if (!catMap[d.category]) catMap[d.category] = [];
+        catMap[d.category].push(d);
+    });
+    const cats = Object.keys(catMap);
+    const series = cats.map(cat => ({
+        name: cat, type: 'scatter',
+        data: catMap[cat].map(d => [d.sub_dept, d.avg_match, d.emp_count]),
+        symbolSize: data => Math.sqrt(data[2]) * 3 + 8,
+        itemStyle: {color: CATEGORY_COLORS[cat], opacity: 0.7}
+    }));
+    chart.setOption({
+        tooltip: {
+            trigger: 'item',
+            formatter: p => `${p.data[0]}<br/>人岗匹配: ${p.data[1]}分<br/>人数: ${p.data[2]}人`
+        },
+        legend: {top: 0, left: 'center'},
+        grid: {left: '3%', right: '4%', top: 40, bottom: 10, containLabel: true},
+        xAxis: {type: 'category', data: [...new Set(depts.map(d => d.sub_dept))], axisLabel: {color: '#666', rotate: 45, fontSize: 10}},
+        yAxis: {type: 'value', name: '人岗匹配评分', max: 10, axisLabel: {color: '#666'}},
+        series: series
+    });
+}
+
+function renderDeptTable(depts) {
+    const tbody = document.getElementById('dept-table-body');
+    let currentCat = '';
+    let html = '';
+    depts.forEach(d => {
+        if (d.category !== currentCat) {
+            currentCat = d.category;
+            html += `<tr class="bg-gray-50"><td colspan="5" class="py-2 px-2 font-medium text-gray-600">${currentCat}</td></tr>`;
+        }
+        html += `<tr class="table-row border-b border-gray-100">
+            <td class="py-2 px-2 text-gray-400">${d.category}</td>
+            <td class="py-2 px-2 text-gray-700">${d.sub_dept}</td>
+            <td class="py-2 px-2 text-right text-gray-700">${d.emp_count}</td>
+            <td class="py-2 px-2 text-right text-gray-700">${d.avg_age}</td>
+            <td class="py-2 px-2 text-right text-gray-700">${d.avg_match}</td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+loadData().catch(err => console.error('Data loading error:', err));
+</script>
+{% endblock %}

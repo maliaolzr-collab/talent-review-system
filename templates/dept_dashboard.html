@@ -1,0 +1,721 @@
+{% extends 'base.html' %}
+{% block title %}部门分析 - 人才盘点分析系统{% endblock %}
+
+{% block content %}
+<div class="p-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-800">部门分析仪表盘</h2>
+            <p class="text-sm text-gray-500 mt-1" id="dept-subtitle">加载中...</p>
+        </div>
+        <!-- Department filter -->
+        <div class="flex items-center gap-3">
+            {% if user.role == 'hr' %}
+            <select id="category-filter" class="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="">全部大类</option>
+                <option value="印染">印染</option>
+                <option value="服装">服装</option>
+                <option value="针织">针织</option>
+                <option value="辅料">辅料</option>
+                <option value="总部">总部</option>
+            </select>
+            {% else %}
+            <span class="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-medium">{{ user.dept_category }}</span>
+            <input type="hidden" id="dept-category-hidden" value="{{ user.dept_category }}">
+            {% endif %}
+            <select id="subdept-filter" class="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none" disabled>
+                <option value="">全部子部门</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        <div class="stat-card bg-white rounded-xl p-4 shadow-sm">
+            <p class="text-xs text-gray-500 mb-1">总人数</p>
+            <p class="text-2xl font-bold text-gray-800" id="stat-total">-</p>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-4 shadow-sm">
+            <p class="text-xs text-gray-500 mb-1">平均年龄</p>
+            <p class="text-2xl font-bold text-gray-800" id="stat-age">-</p>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-4 shadow-sm">
+            <p class="text-xs text-gray-500 mb-1">平均司龄(月)</p>
+            <p class="text-2xl font-bold text-gray-800" id="stat-tenure">-</p>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-4 shadow-sm">
+            <p class="text-xs text-gray-500 mb-1">高潜人才</p>
+            <p class="text-2xl font-bold text-indigo-600" id="stat-high-pot">-</p>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-4 shadow-sm">
+            <p class="text-xs text-gray-500 mb-1">高绩效人才</p>
+            <p class="text-2xl font-bold text-green-600" id="stat-high-perf">-</p>
+        </div>
+    </div>
+
+    <!-- 9-Box Grid -->
+    <div class="chart-card p-5 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-semibold text-gray-700">人才九宫格分布</h3>
+            <div class="flex items-center gap-3">
+                <span class="text-xs text-gray-400">点击格子可筛选员工</span>
+                <button id="clear-grid-filter" class="hidden px-3 py-1 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100 transition flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    清除筛选
+                </button>
+            </div>
+        </div>
+        <div id="nine-box-grid" class="grid grid-cols-4 gap-2 max-w-5xl mx-auto"></div>
+    </div>
+
+    <!-- Charts Row: Pipeline + Performance -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">人才梯队分布</h3>
+            <div id="chart-pipeline" style="height: 300px;"></div>
+        </div>
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">绩效表现分布</h3>
+            <div id="chart-performance" style="height: 300px;"></div>
+        </div>
+    </div>
+
+    <!-- Charts Row: Education + Age -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">学历分布</h3>
+            <div id="chart-education" style="height: 300px;"></div>
+        </div>
+        <div class="chart-card p-5">
+            <h3 class="text-base font-semibold text-gray-700 mb-4">年龄分布</h3>
+            <div id="chart-age" style="height: 300px;"></div>
+        </div>
+    </div>
+
+    <!-- Intelligent Analysis & Recommendations -->
+    <div class="chart-card p-5 mb-6" id="analysis-section">
+        <h3 class="text-base font-semibold text-gray-700 mb-4">智能分析与建议</h3>
+        <div id="analysis-body" class="space-y-3">
+            <p class="text-sm text-gray-400">加载中...</p>
+        </div>
+    </div>
+
+    <!-- Employee List -->
+    <div class="chart-card p-5 mb-6" id="employee-list-section">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-semibold text-gray-700">
+                员工列表
+                <span id="grid-filter-badge" class="hidden ml-2 px-2 py-0.5 rounded text-xs font-medium"></span>
+            </h3>
+            <div class="flex items-center gap-2">
+                <input type="text" id="search-input" placeholder="搜索姓名/岗位..." class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-48">
+                <select id="pipeline-filter" class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">全部梯队</option>
+                    <option value="第一梯队">第一梯队</option>
+                    <option value="第二梯队">第二梯队</option>
+                    <option value="第三梯队">第三梯队</option>
+                    <option value="第四梯队">第四梯队</option>
+                    <option value="第五梯队">第五梯队</option>
+                    <option value="其他">其他</option>
+                </select>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200 text-gray-500">
+                        <th class="text-left py-2 px-2 font-medium">姓名</th>
+                        <th class="text-left py-2 px-2 font-medium">岗位</th>
+                        <th class="text-left py-2 px-2 font-medium">部门</th>
+                        <th class="text-center py-2 px-2 font-medium">年龄</th>
+                        <th class="text-center py-2 px-2 font-medium">学历</th>
+                        <th class="text-center py-2 px-2 font-medium">绩效</th>
+                        <th class="text-center py-2 px-2 font-medium">潜力</th>
+                        <th class="text-center py-2 px-2 font-medium">九宫格</th>
+                        <th class="text-center py-2 px-2 font-medium">梯队</th>
+                        <th class="text-center py-2 px-2 font-medium">人岗匹配</th>
+                    </tr>
+                </thead>
+                <tbody id="emp-table-body"></tbody>
+            </table>
+        </div>
+        <div class="flex items-center justify-between mt-4">
+            <p class="text-xs text-gray-400" id="emp-count">-</p>
+            <div class="flex items-center gap-2">
+                <button id="prev-page" class="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50" disabled>上一页</button>
+                <span class="text-sm text-gray-500" id="page-info">1/1</span>
+                <button id="next-page" class="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50" disabled>下一页</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Employee Detail Modal -->
+<div id="emp-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-overlay">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 sticky top-0 bg-white rounded-t-2xl">
+            <h3 class="text-lg font-bold text-gray-800" id="modal-title">员工详情</h3>
+            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="p-6" id="modal-body"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PIPELINE_ORDER = ['第一梯队', '第二梯队', '第三梯队', '第四梯队', '第五梯队', '其他'];
+const PIPELINE_COLORS = ['#eb2f96', '#722ed1', '#1890ff', '#52c41a', '#faad14', '#d9d9d9'];
+
+const GRID_LAYOUT = [
+    [4, 7, 9],
+    [2, 5, 8],
+    [1, 3, 6]
+];
+const GRID_LABELS = {
+    1: {name: '问题员工', desc: '低潜力，低绩效', color: '#ff4d4f'},
+    2: {name: '差距员工', desc: '中潜力，低绩效', color: '#fa8c16'},
+    3: {name: '一般员工', desc: '低潜力，中绩效', color: '#faad14'},
+    4: {name: '待发展者', desc: '高潜力，低绩效', color: '#fa8c16'},
+    5: {name: '中坚力量', desc: '中潜力，中绩效', color: '#52c41a'},
+    6: {name: '熟练员工', desc: '低潜力，高绩效', color: '#1890ff'},
+    7: {name: '潜力之星', desc: '高潜力，中绩效', color: '#722ed1'},
+    8: {name: '绩效之星', desc: '中潜力，高绩效', color: '#13c2c2'},
+    9: {name: '超级明星', desc: '高潜力，高绩效', color: '#eb2f96'},
+};
+
+const PERF_COLORS = {'A': '#52c41a', 'B': '#faad14', 'C': '#ff4d4f'};
+
+let currentPage = 1;
+let totalPages = 1;
+let selectedGridFilter = '';
+{% if user.role == 'hr' %}
+let currentCategory = '';
+{% else %}
+let currentCategory = '{{ user.dept_category }}';
+{% endif %}
+let currentSubDept = '';
+let urlParams = new URLSearchParams(window.location.search);
+
+if (urlParams.get('grid')) {
+    selectedGridFilter = urlParams.get('grid');
+}
+
+async function loadDepartments() {
+    const res = await fetch('/api/departments');
+    const data = await res.json();
+    const select = document.getElementById('subdept-filter');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">全部子部门</option>';
+
+    {% if user.role == 'hr' %}
+    const cats = Object.keys(data);
+    cats.forEach(cat => {
+        const group = document.createElement('optgroup');
+        group.label = cat;
+        data[cat].forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d.sub_dept;
+            opt.textContent = `${d.sub_dept} (${d.emp_count}人)`;
+            group.appendChild(opt);
+        });
+        select.appendChild(group);
+    });
+    {% else %}
+    // For dept_admin: only show their category's sub-departments
+    const myCat = currentCategory;
+    if (data[myCat]) {
+        data[myCat].forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d.sub_dept;
+            opt.textContent = `${d.sub_dept} (${d.emp_count}人)`;
+            select.appendChild(opt);
+        });
+    }
+    {% endif %}
+    select.disabled = false;
+}
+
+function buildParams() {
+    const params = new URLSearchParams();
+    if (currentCategory) params.set('category', currentCategory);
+    if (currentSubDept) params.set('sub_dept', currentSubDept);
+    return params;
+}
+
+async function loadData() {
+    const params = buildParams();
+
+    const [statsRes, gridRes, ageRes, analysisRes] = await Promise.all([
+        fetch('/api/stats/overview?' + params),
+        fetch('/api/stats/grid?' + params),
+        fetch('/api/stats/age-distribution?' + params),
+        fetch('/api/stats/analysis?' + params)
+    ]);
+    const stats = await statsRes.json();
+    const grid = await gridRes.json();
+    const age = await ageRes.json();
+    const analysis = await analysisRes.json();
+
+    renderStats(stats, grid);
+    renderNineBoxGrid(grid);
+    renderPipeline(stats);
+    renderPerformance(stats);
+    renderEducation(stats);
+    renderAge(age);
+    renderAnalysis(analysis);
+
+    // Update subtitle
+    let subtitle = '';
+    if (currentCategory) subtitle += currentCategory;
+    if (currentSubDept) subtitle += ' / ' + currentSubDept;
+    if (!subtitle) subtitle = '全部可访问部门';
+    document.getElementById('dept-subtitle').textContent = `${subtitle} · 人才九宫格及梯队情况`;
+
+    loadEmployees();
+}
+
+function renderStats(stats, grid) {
+    document.getElementById('stat-total').textContent = stats.total_employees;
+    document.getElementById('stat-age').textContent = stats.avg_age;
+    document.getElementById('stat-tenure').textContent = stats.avg_tenure_months;
+    const highPot = (stats.grid_dist['7']||0) + (stats.grid_dist['9']||0) + (stats.grid_dist['4']||0);
+    document.getElementById('stat-high-pot').textContent = highPot;
+    const highPerf = (stats.perf_dist['A']||0);
+    document.getElementById('stat-high-perf').textContent = highPerf;
+}
+
+function renderNineBoxGrid(grid) {
+    const container = document.getElementById('nine-box-grid');
+
+    let html = '<div></div>';
+    html += '<div class="text-center text-xs font-medium text-gray-500 py-2">需要改善<br><span class="text-gray-400">低/C:&lt;60分</span></div>';
+    html += '<div class="text-center text-xs font-medium text-gray-500 py-2">符合期望<br><span class="text-gray-400">中/B:60-80分</span></div>';
+    html += '<div class="text-center text-xs font-medium text-gray-500 py-2">超出期望<br><span class="text-gray-400">高/A:≥80分</span></div>';
+
+    const rowLabels = [
+        {label: '高潜力 High', color: '#722ed1'},
+        {label: '中潜力 Growth', color: '#52c41a'},
+        {label: '低潜力 Limited', color: '#8c8c8c'}
+    ];
+
+    GRID_LAYOUT.forEach((row, rowIdx) => {
+        html += `<div class="flex items-center justify-center text-xs font-medium py-2 px-1" style="color:${rowLabels[rowIdx].color};">${rowLabels[rowIdx].label}</div>`;
+        row.forEach(gridPos => {
+            const cell = grid[String(gridPos)] || {count: 0, name: '', employees: [], color: '#d9d9d9'};
+            const label = GRID_LABELS[gridPos];
+            const isActive = String(selectedGridFilter) === String(gridPos);
+            const opacity = cell.count > 0 ? 1 : 0.35;
+            const borderColor = isActive ? label.color : cell.color;
+
+            let namesHtml = '';
+            if (cell.employees && cell.employees.length > 0) {
+                const showCount = Math.min(4, cell.employees.length);
+                const names = cell.employees.slice(0, showCount).map(e => e.name).join('、');
+                namesHtml = `<p class="text-xs text-gray-500 mt-1 truncate" title="${cell.employees.map(e=>e.name).join('、')}">${names}${cell.employees.length > showCount ? '...' : ''}</p>`;
+            }
+
+            html += `
+                <div class="grid-cell rounded-lg p-3 border-2 cursor-pointer transition-all"
+                     style="border-color:${borderColor}; background:${cell.color}15; opacity:${opacity}; ${isActive ? 'box-shadow:0 0 0 3px '+cell.color+'40;' : ''}"
+                     onclick="toggleGridFilter(${gridPos})">
+                    <div class="text-center">
+                        <span class="text-xs text-gray-500">${gridPos}. ${label.name}</span>
+                        <p class="text-2xl font-bold mt-1" style="color:${label.color}">${cell.count}</p>
+                        <p class="text-xs text-gray-400">人</p>
+                        ${namesHtml}
+                    </div>
+                </div>`;
+        });
+    });
+
+    container.innerHTML = html;
+}
+
+function toggleGridFilter(gridPos) {
+    if (selectedGridFilter === String(gridPos)) {
+        selectedGridFilter = '';
+    } else {
+        selectedGridFilter = String(gridPos);
+    }
+    updateGridFilterUI();
+    loadEmployees();
+    fetch('/api/stats/grid?' + buildParams())
+        .then(r => r.json())
+        .then(grid => renderNineBoxGrid(grid));
+
+    // Scroll to employee list
+    if (selectedGridFilter) {
+        setTimeout(() => {
+            document.getElementById('employee-list-section')?.scrollIntoView({behavior: 'smooth', block: 'start'});
+        }, 300);
+    }
+}
+
+function updateGridFilterUI() {
+    const clearBtn = document.getElementById('clear-grid-filter');
+    const badge = document.getElementById('grid-filter-badge');
+    if (selectedGridFilter) {
+        const label = GRID_LABELS[parseInt(selectedGridFilter)];
+        if (clearBtn) clearBtn.classList.remove('hidden');
+        if (badge) {
+            badge.classList.remove('hidden');
+            badge.textContent = `筛选: ${selectedGridFilter}.${label ? label.name : ''}`;
+            badge.style.background = (label ? label.color : '#999') + '20';
+            badge.style.color = label ? label.color : '#999';
+        }
+    } else {
+        if (clearBtn) clearBtn.classList.add('hidden');
+        if (badge) badge.classList.add('hidden');
+    }
+}
+
+function renderPipeline(stats) {
+    const chart = echarts.init(document.getElementById('chart-pipeline'));
+    const data = PIPELINE_ORDER.map(p => stats.pipeline_dist[p] || 0);
+    chart.setOption({
+        tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}},
+        grid: {left: '3%', right: '4%', bottom: '3%', containLabel: true},
+        xAxis: {type: 'category', data: PIPELINE_ORDER, axisLabel: {color: '#666', fontSize: 11}},
+        yAxis: {type: 'value', axisLabel: {color: '#666'}},
+        series: [{
+            type: 'bar',
+            data: data.map((v, i) => ({value: v, itemStyle: {color: PIPELINE_COLORS[i]}})),
+            barWidth: '50%',
+            label: {show: true, position: 'top', color: '#333'}
+        }]
+    });
+}
+
+function renderPerformance(stats) {
+    const chart = echarts.init(document.getElementById('chart-performance'));
+    const order = ['A', 'B', 'C'];
+    const colors = ['#52c41a', '#faad14', '#ff4d4f'];
+    const labels = {'A': 'A(优秀)', 'B': 'B(达标)', 'C': 'C(待改进)'};
+    const data = order.filter(p => stats.perf_dist[p]).map((p, i) => ({
+        name: labels[p] || p, value: stats.perf_dist[p], itemStyle: {color: colors[i]}
+    }));
+    chart.setOption({
+        tooltip: {trigger: 'item', formatter: '{b}: {c}人 ({d}%)'},
+        legend: {bottom: 0, left: 'center', textStyle: {fontSize: 11}},
+        series: [{
+            type: 'pie', radius: ['40%', '70%'], center: ['50%', '45%'],
+            data: data,
+            label: {formatter: '{b}\n{c}人', color: '#333', fontSize: 11},
+            itemStyle: {borderRadius: 6, borderColor: '#fff', borderWidth: 2}
+        }]
+    });
+}
+
+function renderEducation(stats) {
+    const chart = echarts.init(document.getElementById('chart-education'));
+    const entries = Object.entries(stats.edu_dist);
+    const eduOrder = ['硕士研究生', '本科', '大专', '高中/高职/中专', '初中', '小学'];
+    entries.sort((a, b) => {
+        const ia = eduOrder.indexOf(a[0]), ib = eduOrder.indexOf(b[0]);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+    chart.setOption({
+        tooltip: {trigger: 'item', formatter: '{b}: {c}人 ({d}%)'},
+        legend: {bottom: 0, left: 'center', textStyle: {fontSize: 11}},
+        series: [{
+            type: 'pie', radius: ['30%', '60%'], center: ['50%', '45%'],
+            data: entries.map(([k, v]) => ({name: k, value: v})),
+            label: {formatter: '{b}\n{c}人', color: '#333', fontSize: 10},
+            itemStyle: {borderRadius: 4, borderColor: '#fff', borderWidth: 2}
+        }]
+    });
+}
+
+function renderAge(age) {
+    const chart = echarts.init(document.getElementById('chart-age'));
+    // Ensure all age groups are present in order
+    const allGroups = ['25岁以下', '25-29岁', '30-34岁', '35-39岁', '40-44岁', '45-49岁', '50岁以上'];
+    const ageMap = {};
+    age.forEach(a => ageMap[a.label] = a.count);
+    const labels = allGroups.filter(g => ageMap[g] !== undefined);
+    const counts = labels.map(g => ageMap[g] || 0);
+
+    chart.setOption({
+        tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}},
+        grid: {left: '3%', right: '4%', bottom: '3%', containLabel: true},
+        xAxis: {type: 'category', data: labels, axisLabel: {color: '#666', fontSize: 10, rotate: 30}},
+        yAxis: {type: 'value', axisLabel: {color: '#666'}},
+        series: [{
+            type: 'bar', data: counts,
+            itemStyle: {color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: '#69b1ff'}, {offset: 1, color: '#1890ff'}])},
+            barWidth: '60%',
+            label: {show: true, position: 'top', color: '#333', fontSize: 10}
+        }]
+    });
+}
+
+function renderAnalysis(analysis) {
+    const container = document.getElementById('analysis-body');
+    if (analysis.error) {
+        container.innerHTML = `<p class="text-sm text-gray-400">${analysis.error}</p>`;
+        return;
+    }
+
+    const typeStyles = {
+        'info': {bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-700', icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'},
+        'warning': {bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z'},
+        'success': {bg: 'bg-green-50', border: 'border-green-300', text: 'text-green-700', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'},
+        'recommendation': {bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z'}
+    };
+
+    container.innerHTML = analysis.analyses.map(a => {
+        const style = typeStyles[a.type] || typeStyles['info'];
+        const lines = a.content.split('\n').filter(l => l.trim());
+        const contentHtml = lines.map(l => `<p class="text-sm ${style.text} leading-relaxed">${l}</p>`).join('');
+        return `
+            <div class="${style.bg} border-l-4 ${style.border} rounded-lg p-4">
+                <div class="flex items-start gap-3">
+                    <svg class="w-5 h-5 ${style.text} flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${style.icon}"/>
+                    </svg>
+                    <div class="flex-1">
+                        <p class="text-sm font-semibold ${style.text} mb-1">${a.title}</p>
+                        ${contentHtml}
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+async function loadEmployees() {
+    const params = new URLSearchParams({
+        page: currentPage,
+        per_page: 20
+    });
+    if (currentCategory) params.set('category', currentCategory);
+    if (currentSubDept) params.set('sub_dept', currentSubDept);
+    if (selectedGridFilter) params.set('grid', selectedGridFilter);
+    const searchVal = document.getElementById('search-input')?.value;
+    if (searchVal) params.set('search', searchVal);
+    const pipelineVal = document.getElementById('pipeline-filter')?.value;
+    if (pipelineVal) params.set('pipeline', pipelineVal);
+
+    const res = await fetch('/api/employees?' + params);
+    const data = await res.json();
+
+    totalPages = Math.ceil(data.total / 20);
+    document.getElementById('page-info').textContent = `${currentPage}/${totalPages || 1}`;
+    document.getElementById('emp-count').textContent = `共 ${data.total} 人`;
+    document.getElementById('prev-page').disabled = currentPage <= 1;
+    document.getElementById('next-page').disabled = currentPage >= totalPages;
+
+    const tbody = document.getElementById('emp-table-body');
+    if (data.employees.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-gray-400">暂无数据</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.employees.map(e => {
+        const perfColor = PERF_COLORS[e.annual_performance] || '#999';
+        const gridLabel = GRID_LABELS[e.grid_position];
+        const gridColor = gridLabel ? gridLabel.color : '#d9d9d9';
+        const gridName = gridLabel ? gridLabel.name : '-';
+        return `<tr class="table-row border-b border-gray-100 cursor-pointer" onclick="showEmployeeDetail(${e.id})">
+            <td class="py-2 px-2 font-medium text-gray-700">${e.chinese_name || '-'}</td>
+            <td class="py-2 px-2 text-gray-600">${e.position_title || '-'}</td>
+            <td class="py-2 px-2 text-gray-500 text-xs">${e.category}/${e.sub_dept}</td>
+            <td class="py-2 px-2 text-center text-gray-600">${e.age || '-'}</td>
+            <td class="py-2 px-2 text-center text-gray-600">${e.education || '-'}</td>
+            <td class="py-2 px-2 text-center"><span class="px-2 py-0.5 rounded text-xs font-medium" style="background:${perfColor}20;color:${perfColor}">${e.annual_performance || '-'}</span></td>
+            <td class="py-2 px-2 text-center text-gray-600">${e.potential_level || '-'}</td>
+            <td class="py-2 px-2 text-center"><span class="px-2 py-0.5 rounded text-xs" style="background:${gridColor}20;color:${gridColor}">${e.grid_position || '-'}.${gridName}</span></td>
+            <td class="py-2 px-2 text-center text-gray-600">${e.talent_pipeline || '-'}</td>
+            <td class="py-2 px-2 text-center text-gray-600">${e.person_position_score || '-'}</td>
+        </tr>`;
+    }).join('');
+}
+
+async function showEmployeeDetail(empId) {
+    const res = await fetch(`/api/employee/${empId}`);
+    const emp = await res.json();
+    if (emp.error) { alert(emp.error); return; }
+
+    const gridLabel = emp.grid_position ? GRID_LABELS[emp.grid_position] : null;
+
+    document.getElementById('modal-title').textContent = `${emp.chinese_name || ''} ${emp.english_name || ''}`;
+    const body = document.getElementById('modal-body');
+
+    body.innerHTML = `
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="bg-gray-50 rounded-lg p-3">
+                <p class="text-xs text-gray-400">岗位</p>
+                <p class="text-sm font-medium text-gray-700">${emp.position_title || '-'}</p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-3">
+                <p class="text-xs text-gray-400">部门</p>
+                <p class="text-sm font-medium text-gray-700">${emp.category} / ${emp.sub_dept}</p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-3">
+                <p class="text-xs text-gray-400">年龄</p>
+                <p class="text-sm font-medium text-gray-700">${emp.age || '-'} 岁</p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-3">
+                <p class="text-xs text-gray-400">学历</p>
+                <p class="text-sm font-medium text-gray-700">${emp.education || '-'}</p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-3">
+                <p class="text-xs text-gray-400">毕业学校</p>
+                <p class="text-sm font-medium text-gray-700">${emp.graduation_institution || '-'}</p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-3">
+                <p class="text-xs text-gray-400">入职日期</p>
+                <p class="text-sm font-medium text-gray-700">${emp.entry_date || '-'}</p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-3">
+                <p class="text-xs text-gray-400">司龄</p>
+                <p class="text-sm font-medium text-gray-700">${emp.company_tenure || '-'}</p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-3">
+                <p class="text-xs text-gray-400">工作年限</p>
+                <p class="text-sm font-medium text-gray-700">${emp.work_experience || '-'}</p>
+            </div>
+        </div>
+
+        ${gridLabel ? `
+        <div class="rounded-lg p-4 mb-4" style="background:${gridLabel.color}10;border-left:4px solid ${gridLabel.color}">
+            <div class="flex items-center gap-2 mb-2">
+                <span class="text-sm font-bold" style="color:${gridLabel.color}">${emp.grid_position}. ${gridLabel.name}</span>
+                <span class="text-xs text-gray-400">${gridLabel.desc}</span>
+            </div>
+            <div class="flex gap-4 text-xs">
+                <span class="text-gray-500">绩效: <b class="text-gray-700">${emp.performance_level || '-'}</b></span>
+                <span class="text-gray-500">潜力: <b class="text-gray-700">${emp.potential_level || '-'}</b></span>
+                <span class="text-gray-500">梯队: <b class="text-gray-700">${emp.talent_pipeline || '-'}</b></span>
+            </div>
+        </div>` : ''}
+
+        <div class="mb-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">评分明细</h4>
+            <div class="grid grid-cols-3 gap-2">
+                <div class="border border-gray-200 rounded-lg p-2 text-center">
+                    <p class="text-xs text-gray-400">人岗匹配</p>
+                    <p class="text-lg font-bold text-gray-700">${emp.person_position_score || '-'}</p>
+                </div>
+                <div class="border border-gray-200 rounded-lg p-2 text-center">
+                    <p class="text-xs text-gray-400">年度绩效</p>
+                    <p class="text-lg font-bold" style="color:${PERF_COLORS[emp.annual_performance] || '#666'}">${emp.annual_performance || '-'}</p>
+                </div>
+                <div class="border border-gray-200 rounded-lg p-2 text-center">
+                    <p class="text-xs text-gray-400">潜力评分</p>
+                    <p class="text-lg font-bold text-gray-700">${emp.potential_score || '-'}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 mb-4">
+            <div class="border border-gray-200 rounded-lg p-2 text-center">
+                <p class="text-xs text-gray-400">知识技能匹配</p>
+                <p class="text-sm font-medium text-gray-700">${emp.knowledge_skill_match || '-'}</p>
+            </div>
+            <div class="border border-gray-200 rounded-lg p-2 text-center">
+                <p class="text-xs text-gray-400">解决问题能力</p>
+                <p class="text-sm font-medium text-gray-700">${emp.problem_solving_match || '-'}</p>
+            </div>
+            <div class="border border-gray-200 rounded-lg p-2 text-center">
+                <p class="text-xs text-gray-400">职务责任匹配</p>
+                <p class="text-sm font-medium text-gray-700">${emp.responsibility_match || '-'}</p>
+            </div>
+        </div>
+
+        ${emp.job_responsibility ? `
+        <div class="mb-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-1">岗位职责</h4>
+            <p class="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 whitespace-pre-line">${emp.job_responsibility}</p>
+        </div>` : ''}
+
+        ${emp.result_application ? `
+        <div class="mb-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-1">结果运用</h4>
+            <p class="text-sm text-gray-600 bg-blue-50 rounded-lg p-3">${emp.result_application}</p>
+        </div>` : ''}
+
+        ${emp.development_plan ? `
+        <div class="mb-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-1">发展计划</h4>
+            <p class="text-sm text-gray-600 bg-green-50 rounded-lg p-3 whitespace-pre-line">${emp.development_plan}</p>
+        </div>` : ''}
+
+        ${emp.management_strategy ? `
+        <div class="mb-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-1">管理策略</h4>
+            <p class="text-sm text-gray-600 bg-amber-50 rounded-lg p-3">${emp.management_strategy}</p>
+        </div>` : ''}
+    `;
+
+    const modal = document.getElementById('emp-modal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeModal() {
+    const modal = document.getElementById('emp-modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+// Event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    loadDepartments();
+
+    document.getElementById('category-filter')?.addEventListener('change', e => {
+        currentCategory = e.target.value;
+        currentSubDept = '';
+        const subSelect = document.getElementById('subdept-filter');
+        if (subSelect) subSelect.value = '';
+        currentPage = 1;
+        loadData();
+    });
+    document.getElementById('subdept-filter')?.addEventListener('change', e => {
+        currentSubDept = e.target.value;
+        currentPage = 1;
+        loadData();
+    });
+
+    document.getElementById('search-input')?.addEventListener('input', () => {
+        clearTimeout(window.searchTimer);
+        window.searchTimer = setTimeout(() => {
+            currentPage = 1;
+            loadEmployees();
+        }, 300);
+    });
+    document.getElementById('pipeline-filter')?.addEventListener('change', () => {
+        currentPage = 1;
+        loadEmployees();
+    });
+    document.getElementById('prev-page')?.addEventListener('click', () => {
+        if (currentPage > 1) { currentPage--; loadEmployees(); }
+    });
+    document.getElementById('next-page')?.addEventListener('click', () => {
+        if (currentPage < totalPages) { currentPage++; loadEmployees(); }
+    });
+    document.getElementById('emp-modal')?.addEventListener('click', e => {
+        if (e.target.id === 'emp-modal') closeModal();
+    });
+    document.getElementById('clear-grid-filter')?.addEventListener('click', () => {
+        selectedGridFilter = '';
+        updateGridFilterUI();
+        loadEmployees();
+        fetch('/api/stats/grid?' + buildParams())
+            .then(r => r.json())
+            .then(grid => renderNineBoxGrid(grid));
+    });
+
+    // Initialize grid filter UI if loaded from URL param
+    if (selectedGridFilter) {
+        updateGridFilterUI();
+    }
+
+    loadData();
+});
+</script>
+{% endblock %}

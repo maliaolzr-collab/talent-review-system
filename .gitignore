@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+data/*.db
+data/*.log
+data/uploads/*
+!data/uploads/.gitkeep
+.DS_Store
+*.swp
+*.swo
+.env
+node_modules/
