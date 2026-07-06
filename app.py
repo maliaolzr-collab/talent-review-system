@@ -64,6 +64,26 @@ from excel_parser import parse_excel_file, parse_all_excel_files, GRID_INFO, PIP
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)
 
+# Debug error handler to expose tracebacks during migration debugging
+import traceback
+@app.errorhandler(500)
+def internal_error(e):
+    tb = traceback.format_exc()
+    app.logger.error('Internal Server Error: %s', tb)
+    if request.is_json or request.path.startswith('/api/'):
+        return jsonify({'error': 'Internal Server Error', 'traceback': tb}), 500
+    return '<pre>' + tb.replace('<', '&lt;').replace('>', '&gt;') + '</pre>', 500
+
+@app.route('/health')
+def health():
+    try:
+        db = get_db()
+        row = _db_fetchone(db, 'SELECT 1 as ok')
+        return jsonify({'status': 'ok', 'db': 'connected', 'mode': 'postgres' if USE_POSTGRES else 'sqlite', 'test': row})
+    except Exception as e:
+        tb = traceback.format_exc()
+        return jsonify({'status': 'error', 'message': str(e), 'traceback': tb}), 500
+
 # Configuration - Use environment variables for cloud deployment
 BASE_DIR = os.environ.get('BASE_DIR', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.environ.get('DATA_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data'))
