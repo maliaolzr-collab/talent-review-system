@@ -136,7 +136,7 @@ def _db_execute(db, sql, params=()):
         cur.execute(sql, params)
         return cur
     else:
-        return _db_execute(db, sql, params)
+        return db.execute(sql, params)
 
 def _db_fetchone(db, sql, params=()):
     cur = _db_execute(db, sql, params)
@@ -154,10 +154,10 @@ def _db_fetchall(db, sql, params=()):
 
 def _db_commit(db):
     if USE_POSTGRES:
-        _db_commit(db)
+        db.commit()
         g._db_autocommit = True
     else:
-        _db_commit(db)
+        db.commit()
 
 
 def init_db():
