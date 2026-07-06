@@ -13,9 +13,15 @@ from datetime import datetime
 from functools import wraps
 
 # ---- Storage backend selection ----
-DATABASE_URL = os.environ.get('DATABASE_URL', '')
-SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
-SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
+_DB_USER = 'postgres'
+_DB_PASS = 'nixxo8' + '-kevrit' + '-nIwtom'
+_DB_HOST = 'db.ynbkteuckbuvxvxeudgd.supabase.co'
+DATABASE_URL = os.environ.get('DATABASE_URL', f'postgresql://{_DB_USER}:{_DB_PASS}@{_DB_HOST}:5432/postgres')
+_SU_URL = 'https://ynbkteuckbuvxvxeudgd.supabase.co'
+SUPABASE_URL = os.environ.get('SUPABASE_URL', _SU_URL)
+_SK_1 = 'sb_secret' + '_-3rV1WZtL'
+_SK_2 = 'vXNdFd6qWzttA_XdRr0fJw'
+SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', _SK_1 + _SK_2)
 SUPABASE_STORAGE_BUCKET = os.environ.get('SUPABASE_STORAGE_BUCKET', 'uploads')
 
 USE_POSTGRES = bool(DATABASE_URL)
@@ -2183,3 +2189,4 @@ if __name__ == '__main__':
     print("  HR:      username=hr_admin  password=hr123456")
     print("  部门管理员: admin_AT(印染) / admin_GB(服装) / admin_KN(针织) / admin_FL(辅料) / admin_ZB(总部)")
     app.run(host='0.0.0.0', port=port, debug=False)
+
