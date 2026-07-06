@@ -5,12 +5,33 @@ Flask application with Excel upload, data visualization, and role-based access c
 import os
 import json
 import re
-import sqlite3
 import hashlib
 import secrets
 import io
+import sys
 from datetime import datetime
 from functools import wraps
+
+# ---- Storage backend selection ----
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
+SUPABASE_STORAGE_BUCKET = os.environ.get('SUPABASE_STORAGE_BUCKET', 'uploads')
+
+USE_POSTGRES = bool(DATABASE_URL)
+USE_SUPABASE_STORAGE = bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
+
+_mode_label = "Supabase PostgreSQL" if USE_POSTGRES else "Local SQLite"
+_store_label = "Supabase Storage" if USE_SUPABASE_STORAGE else "Local filesystem"
+print(f"[INFO] Storage mode: {_mode_label}", file=sys.stderr)
+print(f"[INFO] File storage: {_store_label}", file=sys.stderr)
+
+if USE_POSTGRES:
+    import psycopg2
+    import psycopg2.pool
+    import psycopg2.extras
+else:
+    import sqlite3
 
 from flask import (Flask, request, session, redirect, url_for, jsonify,
                    render_template, g, send_from_directory, Response)
@@ -47,34 +68,101 @@ ALLOWED_EXTENSIONS = {'.xls', '.xlsx'}
 try:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-except Exception as e:
-    import sys
-    print(f'WARNING: Cannot create directories: {e}', file=sys.stderr)
+except Exception:
+    pass
 
 
 # ============================================================
 # Database
 # ============================================================
 
+# ---- Database pool (PostgreSQL) or connection (SQLite) ----
+_pg_pool = None
+
+def _get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None and USE_POSTGRES:
+        _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=1, maxconn=5, dsn=DATABASE_URL
+        )
+    return _pg_pool
+
 def get_db():
     if 'db' not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute('PRAGMA foreign_keys = ON')
+        if USE_POSTGRES:
+            pool = _get_pg_pool()
+            if pool is None:
+                raise RuntimeError("PostgreSQL pool not initialized")
+            g.db = pool.getconn()
+            g._db_autocommit = False
+        else:
+            g.db = sqlite3.connect(DB_PATH)
+            g.db.row_factory = sqlite3.Row
+            g._db_execute(db, 'PRAGMA foreign_keys = ON')
     return g.db
 
 
 @app.teardown_appcontext
 def close_db(error):
-    db = g.pop('db', None)
-    if db is not None:
-        db.close()
+    if USE_POSTGRES:
+        conn = g.pop('db', None)
+        if conn is not None:
+            auto = g.pop('_db_autocommit', False)
+            try:
+                if not auto:
+                    conn.rollback()
+            except Exception:
+                pass
+            pool = _get_pg_pool()
+            if pool:
+                pool.putconn(conn)
+    else:
+        db = g.pop('db', None)
+        if db is not None:
+            db.close()
+
+
+# ---- Unified DB helpers ----
+def _db_execute(db, sql, params=()):
+    if USE_POSTGRES:
+        sql = sql.replace('?', '%s')
+        cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql, params)
+        return cur
+    else:
+        return _db_execute(db, sql, params)
+
+def _db_fetchone(db, sql, params=()):
+    cur = _db_execute(db, sql, params)
+    row = cur.fetchone()
+    if USE_POSTGRES:
+        return dict(row) if row else None
+    return row
+
+def _db_fetchall(db, sql, params=()):
+    cur = _db_execute(db, sql, params)
+    rows = cur.fetchall()
+    if USE_POSTGRES:
+        return [dict(r) for r in rows] if rows else []
+    return rows
+
+def _db_commit(db):
+    if USE_POSTGRES:
+        _db_commit(db)
+        g._db_autocommit = True
+    else:
+        _db_commit(db)
 
 
 def init_db():
     """Create database tables and pre-load Excel data."""
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
+    if USE_POSTGRES:
+        pool = _get_pg_pool()
+        db = pool.getconn()
+        db.autocommit = True
+    else:
+        db = sqlite3.connect(DB_PATH)
+        db.row_factory = sqlite3.Row
     db.executescript('''
         CREATE TABLE IF NOT EXISTS departments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,16 +235,23 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_employees_grid ON employees(grid_position);
         CREATE INDEX IF NOT EXISTS idx_employees_pipeline ON employees(talent_pipeline);
     ''')
-    db.commit()
+    _db_commit(db)
 
     # Check if data already loaded
-    count = db.execute('SELECT COUNT(*) as c FROM employees').fetchone()['c']
+    count = _db_fetchone(db, 'SELECT COUNT(*) as c FROM employees')['c']
     if count == 0:
         load_excel_data(db)
 
     # Create default users if not exist
     create_default_users(db)
-    db.close()
+    if USE_POSTGRES:
+        _db_commit(db)
+        pool = _get_pg_pool()
+        if pool:
+            pool.putconn(db)
+    else:
+        _db_commit(db)
+        db.close()
 
 
 def load_excel_data(db):
@@ -166,14 +261,14 @@ def load_excel_data(db):
     # Insert departments
     dept_map = {}
     for category, sub_dept in depts:
-        db.execute(
+        _db_execute(db, 
             'INSERT OR IGNORE INTO departments (category, sub_dept) VALUES (?, ?)',
             (category, sub_dept)
         )
-    db.commit()
+    _db_commit(db)
 
     # Get dept IDs
-    for row in db.execute('SELECT id, category, sub_dept FROM departments'):
+    for row in _db_execute(db, 'SELECT id, category, sub_dept FROM departments'):
         dept_map[(row['category'], row['sub_dept'])] = row['id']
 
     # Insert employees
@@ -183,7 +278,7 @@ def load_excel_data(db):
         if not dept_id:
             continue
 
-        db.execute('''
+        _db_execute(db, '''
             INSERT INTO employees (
                 dept_id, chinese_name, english_name, position_title,
                 job_responsibility, job_level, age, education,
@@ -218,12 +313,12 @@ def load_excel_data(db):
     # Create upload batch records
     for category, sub_dept in depts:
         emp_count = sum(1 for e in employees if e['dept_category'] == category and e['sub_dept'] == sub_dept)
-        db.execute('''
+        _db_execute(db, '''
             INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count)
             VALUES (?, ?, ?, NULL, ?)
         ''', (category, sub_dept, f'{sub_dept}.xls', emp_count))
 
-    db.commit()
+    _db_commit(db)
     print(f"Loaded {len(employees)} employees from {len(depts)} departments")
 
 
@@ -238,14 +333,14 @@ def create_default_users(db):
         ('admin_ZB', 'dept123ZB', 'dept_admin', '总部', '总部管理员'),
     ]
     for username, password, role, dept_cat, display_name in users:
-        existing = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+        existing = _db_execute(db, 'SELECT id FROM users WHERE username = ?', (username,)).fetchone()
         if not existing:
             pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-            db.execute(
+            _db_execute(db, 
                 'INSERT INTO users (username, password_hash, role, dept_category, display_name) VALUES (?, ?, ?, ?, ?)',
                 (username, pwd_hash, role, dept_cat, display_name)
             )
-    db.commit()
+    _db_commit(db)
 
 
 def hash_password(password):
@@ -282,7 +377,7 @@ def get_current_user():
     if 'user_id' not in session:
         return None
     db = get_db()
-    return db.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+    return _db_execute(db, 'SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
 
 
 def get_accessible_dept_ids():
@@ -293,9 +388,9 @@ def get_accessible_dept_ids():
         return []
 
     if user['role'] == 'hr':
-        rows = db.execute('SELECT id FROM departments').fetchall()
+        rows = _db_execute(db, 'SELECT id FROM departments').fetchall()
     else:
-        rows = db.execute(
+        rows = _db_execute(db, 
             'SELECT id FROM departments WHERE category = ?', (user['dept_category'],)
         ).fetchall()
     return [r['id'] for r in rows]
@@ -330,7 +425,7 @@ def login():
         username = request.form.get('username', '')
         password = request.form.get('password', '')
         db = get_db()
-        user = db.execute(
+        user = _db_execute(db, 
             'SELECT * FROM users WHERE username = ?', (username,)
         ).fetchone()
         if user and user['password_hash'] == hash_password(password):
@@ -407,19 +502,19 @@ def api_overview_stats():
         base_filter += ' AND dept_id IN (SELECT id FROM departments WHERE sub_dept = ?)'
         base_params.append(sub_dept)
 
-    total = db.execute(
+    total = _db_execute(db, 
         'SELECT COUNT(*) as c FROM employees WHERE 1=1' + base_filter, base_params
     ).fetchone()['c']
 
-    dept_count = db.execute(
+    dept_count = _db_execute(db, 
         'SELECT COUNT(DISTINCT dept_id) as c FROM employees WHERE 1=1' + base_filter, base_params
     ).fetchone()['c']
 
-    avg_age = db.execute(
+    avg_age = _db_execute(db, 
         'SELECT AVG(age) as v FROM employees WHERE 1=1' + base_filter + ' AND age IS NOT NULL', base_params
     ).fetchone()['v']
 
-    avg_tenure_months = db.execute(f"""
+    avg_tenure_months = _db_execute(db, f"""
         SELECT AVG(CAST(
             CASE
                 WHEN company_tenure LIKE '%年%个月' THEN
@@ -435,7 +530,7 @@ def api_overview_stats():
     ).fetchone()['v']
 
     # Pipeline distribution
-    pipeline_rows = db.execute("""
+    pipeline_rows = _db_execute(db, """
         SELECT talent_pipeline, COUNT(*) as c
         FROM employees WHERE 1=1""" + base_filter + """
         GROUP BY talent_pipeline
@@ -443,7 +538,7 @@ def api_overview_stats():
     pipeline_dist = {r['talent_pipeline']: r['c'] for r in pipeline_rows}
 
     # Grid distribution
-    grid_rows = db.execute("""
+    grid_rows = _db_execute(db, """
         SELECT grid_position, COUNT(*) as c
         FROM employees WHERE 1=1""" + base_filter + " AND grid_position IS NOT NULL" + """
         GROUP BY grid_position
@@ -451,7 +546,7 @@ def api_overview_stats():
     grid_dist = {str(r['grid_position']): r['c'] for r in grid_rows}
 
     # Performance distribution
-    perf_rows = db.execute("""
+    perf_rows = _db_execute(db, """
         SELECT annual_performance, COUNT(*) as c
         FROM employees WHERE 1=1""" + base_filter + " AND annual_performance != ''" + """
         GROUP BY annual_performance
@@ -459,7 +554,7 @@ def api_overview_stats():
     perf_dist = {r['annual_performance']: r['c'] for r in perf_rows}
 
     # Education distribution
-    edu_rows = db.execute("""
+    edu_rows = _db_execute(db, """
         SELECT education, COUNT(*) as c
         FROM employees WHERE 1=1""" + base_filter + " AND education != ''" + """
         GROUP BY education ORDER BY c DESC
@@ -487,7 +582,7 @@ def api_dept_comparison():
         return jsonify([])
 
     placeholders = ','.join('?' * len(dept_ids))
-    rows = db.execute(f"""
+    rows = _db_execute(db, f"""
         SELECT d.category, d.sub_dept, COUNT(e.id) as emp_count,
                AVG(e.age) as avg_age,
                AVG(e.person_position_score) as avg_match
@@ -520,7 +615,7 @@ def api_category_summary():
 
     result = []
     for cat in categories:
-        rows = db.execute("""
+        rows = _db_execute(db, """
             SELECT e.grid_position, e.talent_pipeline, e.annual_performance,
                    e.age, e.person_position_score
             FROM employees e
@@ -593,7 +688,7 @@ def api_grid_stats():
         query += ' AND d.sub_dept = ?'
         params.append(sub_dept)
 
-    rows = db.execute(query, params).fetchall()
+    rows = _db_execute(db, query, params).fetchall()
 
     grid_data = {}
     for grid_pos in range(1, 10):
@@ -645,7 +740,7 @@ def api_age_dist():
         base_filter += ' AND dept_id IN (SELECT id FROM departments WHERE sub_dept = ?)'
         base_params.append(sub_dept)
 
-    rows = db.execute(f"""
+    rows = _db_execute(db, f"""
         SELECT
             CASE
                 WHEN age < 25 THEN '25岁以下'
@@ -681,7 +776,7 @@ def api_pipeline_stats():
 
     result = {}
     for cat in cats:
-        rows = db.execute("""
+        rows = _db_execute(db, """
             SELECT talent_pipeline, COUNT(*) as c
             FROM employees e
             JOIN departments d ON e.dept_id = d.id
@@ -751,12 +846,12 @@ def api_employees():
         params.extend([f'%{search}%', f'%{search}%'])
         count_params.extend([f'%{search}%', f'%{search}%'])
 
-    total = db.execute(count_query, count_params).fetchone()['c']
+    total = _db_execute(db, count_query, count_params).fetchone()['c']
 
     query += ' ORDER BY d.category, d.sub_dept, e.id LIMIT ? OFFSET ?'
     params.extend([per_page, (page - 1) * per_page])
 
-    rows = db.execute(query, params).fetchall()
+    rows = _db_execute(db, query, params).fetchall()
 
     employees = []
     for r in rows:
@@ -776,7 +871,7 @@ def api_employee_detail(emp_id):
     db = get_db()
     dept_ids = get_accessible_dept_ids()
 
-    row = db.execute("""
+    row = _db_execute(db, """
         SELECT e.*, d.category, d.sub_dept
         FROM employees e
         JOIN departments d ON e.dept_id = d.id
@@ -809,7 +904,7 @@ def api_departments():
     dept_ids = get_accessible_dept_ids()
     placeholders = ','.join('?' * len(dept_ids))
 
-    rows = db.execute(f"""
+    rows = _db_execute(db, f"""
         SELECT d.id, d.category, d.sub_dept, COUNT(e.id) as emp_count
         FROM departments d
         LEFT JOIN employees e ON e.dept_id = d.id
@@ -844,7 +939,7 @@ def api_add_department():
     if not category or not sub_dept:
         return jsonify({'error': '部门大类和子部门名称不能为空'}), 400
 
-    existing = db.execute(
+    existing = _db_execute(db, 
         'SELECT id FROM departments WHERE category = ? AND sub_dept = ?',
         (category, sub_dept)
     ).fetchone()
@@ -852,11 +947,11 @@ def api_add_department():
     if existing:
         return jsonify({'error': f'部门已存在: {category}/{sub_dept}'}), 409
 
-    db.execute(
+    _db_execute(db, 
         'INSERT INTO departments (category, sub_dept) VALUES (?, ?)',
         (category, sub_dept)
     )
-    db.commit()
+    _db_commit(db)
 
     return jsonify({'success': True, 'message': f'部门已添加: {category}/{sub_dept}'})
 
@@ -872,15 +967,15 @@ def api_delete_department():
     if not dept_id:
         return jsonify({'error': '缺少部门ID'}), 400
 
-    dept = db.execute('SELECT * FROM departments WHERE id = ?', (dept_id,)).fetchone()
+    dept = _db_execute(db, 'SELECT * FROM departments WHERE id = ?', (dept_id,)).fetchone()
     if not dept:
         return jsonify({'error': '部门不存在'}), 404
 
-    emp_count = db.execute('SELECT COUNT(*) as c FROM employees WHERE dept_id = ?', (dept_id,)).fetchone()['c']
+    emp_count = _db_execute(db, 'SELECT COUNT(*) as c FROM employees WHERE dept_id = ?', (dept_id,)).fetchone()['c']
 
-    db.execute('DELETE FROM employees WHERE dept_id = ?', (dept_id,))
-    db.execute('DELETE FROM departments WHERE id = ?', (dept_id,))
-    db.commit()
+    _db_execute(db, 'DELETE FROM employees WHERE dept_id = ?', (dept_id,))
+    _db_execute(db, 'DELETE FROM departments WHERE id = ?', (dept_id,))
+    _db_commit(db)
 
     return jsonify({
         'success': True,
@@ -895,14 +990,14 @@ def api_upload_history():
     user = get_current_user()
 
     if user['role'] == 'hr':
-        rows = db.execute("""
+        rows = _db_execute(db, """
             SELECT b.*, u.display_name as uploader
             FROM upload_batches b
             LEFT JOIN users u ON b.uploaded_by = u.id
             ORDER BY b.uploaded_at DESC
         """).fetchall()
     else:
-        rows = db.execute("""
+        rows = _db_execute(db, """
             SELECT b.*, u.display_name as uploader
             FROM upload_batches b
             LEFT JOIN users u ON b.uploaded_by = u.id
@@ -948,29 +1043,61 @@ def api_upload():
         # Try to extract from filename
         sub_dept = os.path.splitext(secure_filename(file.filename))[0]
 
-    # Save file
+    # Save file (local or Supabase Storage)
     filename = secure_filename(file.filename)
     if not filename:
         filename = f'upload_{datetime.now().strftime("%Y%m%d_%H%M%S")}{ext}'
-    filepath = os.path.join(UPLOAD_DIR, f'{category}_{sub_dept}_{filename}')
-    file.save(filepath)
 
-    # Parse Excel
+    # Read file content
+    file_content = file.read()
+    file.seek(0)
+
+    if USE_SUPABASE_STORAGE:
+        storage_path = f'{category}/{sub_dept}/{filename}'
+        upload_url = f'{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{storage_path}'
+        try:
+            upload_req = urllib.request.Request(upload_url, data=file_content, method='POST')
+            upload_req.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+            upload_req.add_header('Content-Type', 'application/octet-stream')
+            upload_req.add_header('x-upsert', 'true')
+            urllib.request.urlopen(upload_req, timeout=30)
+        except Exception as e:
+            print(f'[WARN] Supabase upload failed: {e}', file=sys.stderr)
+            filepath = os.path.join(UPLOAD_DIR, f'{category}_{sub_dept}_{filename}')
+            with open(filepath, 'wb') as f:
+                f.write(file_content)
+    else:
+        filepath = os.path.join(UPLOAD_DIR, f'{category}_{sub_dept}_{filename}')
+        file.save(filepath)
+
+    # Parse from temp file
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        tmp.write(file_content)
+        tmp_path = tmp.name
+
     try:
-        employees = parse_excel_file(filepath, category, sub_dept)
+        employees = parse_excel_file(tmp_path, category, sub_dept)
     except Exception as e:
-        os.remove(filepath)
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
         return jsonify({'error': f'Excel解析失败: {str(e)}'}), 400
 
+    try:
+        os.unlink(tmp_path)
+    except Exception:
+        pass
+
     if not employees:
-        os.remove(filepath)
-        return jsonify({'error': '文件中未找到有效数据，请检查Excel格式是否符合人才九宫格模板'}), 400
+        return jsonify({'error': '文件中未找到有效数据'}), 400
 
     # Save to database
     db = get_db()
 
     # Get or create department
-    dept = db.execute(
+    dept = _db_execute(db, 
         'SELECT id FROM departments WHERE category = ? AND sub_dept = ?',
         (category, sub_dept)
     ).fetchone()
@@ -978,9 +1105,9 @@ def api_upload():
     if dept:
         dept_id = dept['id']
         # Delete old employees for this department
-        db.execute('DELETE FROM employees WHERE dept_id = ?', (dept_id,))
+        _db_execute(db, 'DELETE FROM employees WHERE dept_id = ?', (dept_id,))
     else:
-        cur = db.execute(
+        cur = _db_execute(db, 
             'INSERT INTO departments (category, sub_dept) VALUES (?, ?)',
             (category, sub_dept)
         )
@@ -988,7 +1115,7 @@ def api_upload():
 
     # Insert new employees
     for emp in employees:
-        db.execute('''
+        _db_execute(db, '''
             INSERT INTO employees (
                 dept_id, chinese_name, english_name, position_title,
                 job_responsibility, job_level, age, education,
@@ -1022,16 +1149,23 @@ def api_upload():
         ))
 
     # Record upload batch
-    batch_cur = db.execute('''
-        INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (category, sub_dept, filename, user['id'], len(employees)))
-    batch_id = batch_cur.lastrowid
+    if USE_POSTGRES:
+        batch_row = _db_fetchone(db,
+            'INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count)
+            VALUES (?, ?, ?, ?, ?) RETURNING id',
+            (category, sub_dept, filename, user[\'id\'], len(employees)))
+        batch_id = batch_row[\'id\']
+    else:
+        batch_cur = _db_execute(db,
+            'INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count)
+            VALUES (?, ?, ?, ?, ?)',
+            (category, sub_dept, filename, user[\'id\'], len(employees)))
+        batch_id = batch_cur.lastrowid
 
     # Update employees with batch_id
-    db.execute('UPDATE employees SET upload_batch_id = ? WHERE dept_id = ?', (batch_id, dept_id))
+    _db_execute(db, 'UPDATE employees SET upload_batch_id = ? WHERE dept_id = ?', (batch_id, dept_id))
 
-    db.commit()
+    _db_commit(db)
 
     return jsonify({
         'success': True,
@@ -1072,7 +1206,7 @@ def api_analysis():
         base_params.append(sub_dept)
 
     # Fetch aggregated data
-    rows = db.execute(f"""
+    rows = _db_execute(db, f"""
         SELECT e.age, e.education, e.annual_performance, e.grid_position,
                e.talent_pipeline, e.person_position_score, e.potential_score,
                e.company_tenure, e.performance_level, e.potential_level
@@ -1450,7 +1584,7 @@ def api_export():
         params.append(pipeline)
 
     query += ' ORDER BY d.category, d.sub_dept, e.id'
-    rows = db.execute(query, params).fetchall()
+    rows = _db_execute(db, query, params).fetchall()
 
     if not rows:
         return jsonify({'error': '无数据可导出'}), 404
