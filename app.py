@@ -9,14 +9,12 @@ import hashlib
 import secrets
 import io
 import sys
+import urllib.request
+import urllib.error
 from datetime import datetime
 from functools import wraps
 
 # ---- Storage backend selection ----
-_DB_USER = 'postgres'
-_DB_PASS = 'nixxo8' + '-kevrit' + '-nIwtom'
-_DB_HOST = 'db.ynbkteuckbuvxvxeudgd.supabase.co'
-DATABASE_URL = os.environ.get('DATABASE_URL', f'postgresql://{_DB_USER}:{_DB_PASS}@{_DB_HOST}:5432/postgres')
 _SU_URL = 'https://ynbkteuckbuvxvxeudgd.supabase.co'
 SUPABASE_URL = os.environ.get('SUPABASE_URL', _SU_URL)
 _SK_1 = 'sb_secret' + '_-3rV1WZtL'
@@ -24,20 +22,70 @@ _SK_2 = 'vXNdFd6qWzttA_XdRr0fJw'
 SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', _SK_1 + _SK_2)
 SUPABASE_STORAGE_BUCKET = os.environ.get('SUPABASE_STORAGE_BUCKET', 'uploads')
 
-USE_POSTGRES = bool(DATABASE_URL)
+# Render free instances cannot reach Supabase PostgreSQL over IPv6, so we use
+# local SQLite for queries and persist the SQLite file to Supabase Storage.
+USE_POSTGRES = False
 USE_SUPABASE_STORAGE = bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
 
-_mode_label = "Supabase PostgreSQL" if USE_POSTGRES else "Local SQLite"
-_store_label = "Supabase Storage" if USE_SUPABASE_STORAGE else "Local filesystem"
-print(f"[INFO] Storage mode: {_mode_label}", file=sys.stderr)
-print(f"[INFO] File storage: {_store_label}", file=sys.stderr)
+print(f"[INFO] Storage mode: Local SQLite", file=sys.stderr)
+print(f"[INFO] Persistence: Supabase Storage" if USE_SUPABASE_STORAGE else "[INFO] Persistence: Local filesystem", file=sys.stderr)
 
-if USE_POSTGRES:
-    import psycopg2
-    import psycopg2.pool
-    import psycopg2.extras
-else:
-    import sqlite3
+import sqlite3
+
+# ---- Supabase Storage sync for SQLite persistence ----
+_DB_OBJECT_NAME = 'talent.db'
+
+
+def _supabase_auth_headers():
+    return {
+        'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}',
+        'apikey': SUPABASE_SERVICE_KEY,
+    }
+
+
+def _download_db_from_supabase():
+    """Download existing SQLite DB from Supabase Storage; return True if downloaded."""
+    if not USE_SUPABASE_STORAGE:
+        return False
+    url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{_DB_OBJECT_NAME}"
+    req = urllib.request.Request(url, headers=_supabase_auth_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = resp.read()
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        with open(DB_PATH, 'wb') as f:
+            f.write(data)
+        print(f"[INFO] Downloaded DB from Supabase Storage ({len(data)} bytes)", file=sys.stderr)
+        return True
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print("[INFO] No existing DB in Supabase Storage; will create new", file=sys.stderr)
+        else:
+            print(f"[WARNING] Failed to download DB from Supabase: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"[WARNING] Failed to download DB from Supabase: {e}", file=sys.stderr)
+    return False
+
+
+def _upload_db_to_supabase():
+    """Upload SQLite DB to Supabase Storage after writes."""
+    if not USE_SUPABASE_STORAGE or not os.path.exists(DB_PATH):
+        return False
+    url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{_DB_OBJECT_NAME}"
+    try:
+        with open(DB_PATH, 'rb') as f:
+            data = f.read()
+        headers = _supabase_auth_headers()
+        headers['Content-Type'] = 'application/octet-stream'
+        req = urllib.request.Request(url, data=data, headers=headers, method='PUT')
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            _ = resp.read()
+        print(f"[INFO] Uploaded DB to Supabase Storage ({len(data)} bytes)", file=sys.stderr)
+        return True
+    except Exception as e:
+        print(f"[WARNING] Failed to upload DB to Supabase: {e}", file=sys.stderr)
+    return False
+
 
 from flask import (Flask, request, session, redirect, url_for, jsonify,
                    render_template, g, send_from_directory, Response)
@@ -79,7 +127,7 @@ def health():
     try:
         db = get_db()
         row = _db_fetchone(db, 'SELECT 1 as ok')
-        return jsonify({'status': 'ok', 'db': 'connected', 'mode': 'postgres' if USE_POSTGRES else 'sqlite', 'test': row})
+        return jsonify({'status': 'ok', 'db': 'connected', 'mode': 'sqlite+supabase-storage', 'test': row})
     except Exception as e:
         tb = traceback.format_exc()
         return jsonify({'status': 'error', 'message': str(e), 'traceback': tb}), 500
@@ -102,93 +150,44 @@ except Exception:
 # Database
 # ============================================================
 
-# ---- Database pool (PostgreSQL) or connection (SQLite) ----
-_pg_pool = None
-
-def _get_pg_pool():
-    global _pg_pool
-    if _pg_pool is None and USE_POSTGRES:
-        _pg_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=1, maxconn=5, dsn=DATABASE_URL
-        )
-    return _pg_pool
-
 def get_db():
     if 'db' not in g:
-        if USE_POSTGRES:
-            pool = _get_pg_pool()
-            if pool is None:
-                raise RuntimeError("PostgreSQL pool not initialized")
-            g.db = pool.getconn()
-            g._db_autocommit = False
-        else:
-            g.db = sqlite3.connect(DB_PATH)
-            g.db.row_factory = sqlite3.Row
-            g._db_execute(db, 'PRAGMA foreign_keys = ON')
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute('PRAGMA foreign_keys = ON')
     return g.db
 
 
 @app.teardown_appcontext
 def close_db(error):
-    if USE_POSTGRES:
-        conn = g.pop('db', None)
-        if conn is not None:
-            auto = g.pop('_db_autocommit', False)
-            try:
-                if not auto:
-                    conn.rollback()
-            except Exception:
-                pass
-            pool = _get_pg_pool()
-            if pool:
-                pool.putconn(conn)
-    else:
-        db = g.pop('db', None)
-        if db is not None:
-            db.close()
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
+        _upload_db_to_supabase()
 
 
 # ---- Unified DB helpers ----
 def _db_execute(db, sql, params=()):
-    if USE_POSTGRES:
-        sql = sql.replace('?', '%s')
-        cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(sql, params)
-        return cur
-    else:
-        return db.execute(sql, params)
+    return db.execute(sql, params)
 
 def _db_fetchone(db, sql, params=()):
-    cur = _db_execute(db, sql, params)
-    row = cur.fetchone()
-    if USE_POSTGRES:
-        return dict(row) if row else None
-    return row
+    return _db_execute(db, sql, params).fetchone()
 
 def _db_fetchall(db, sql, params=()):
-    cur = _db_execute(db, sql, params)
-    rows = cur.fetchall()
-    if USE_POSTGRES:
-        return [dict(r) for r in rows] if rows else []
-    return rows
+    return _db_execute(db, sql, params).fetchall()
 
 def _db_commit(db):
-    if USE_POSTGRES:
-        db.commit()
-        g._db_autocommit = True
-    else:
-        db.commit()
+    db.commit()
+    _upload_db_to_supabase()
 
 
 def init_db():
     """Create database tables and pre-load Excel data."""
-    if USE_POSTGRES:
-        pool = _get_pg_pool()
-        db = pool.getconn()
-        db.autocommit = True
-    else:
-        db = sqlite3.connect(DB_PATH)
-        db.row_factory = sqlite3.Row
+    # Try to restore existing SQLite DB from Supabase Storage first
+    _download_db_from_supabase()
+
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
     db.executescript('''
         CREATE TABLE IF NOT EXISTS departments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -270,14 +269,8 @@ def init_db():
 
     # Create default users if not exist
     create_default_users(db)
-    if USE_POSTGRES:
-        _db_commit(db)
-        pool = _get_pg_pool()
-        if pool:
-            pool.putconn(db)
-    else:
-        _db_commit(db)
-        db.close()
+    _db_commit(db)
+    db.close()
 
 
 def load_excel_data(db):
@@ -1175,18 +1168,11 @@ def api_upload():
         ))
 
     # Record upload batch
-    if USE_POSTGRES:
-        batch_row = _db_fetchone(db,
-            'INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count) '
-            'VALUES (?, ?, ?, ?, ?) RETURNING id',
-            (category, sub_dept, filename, user['id'], len(employees)))
-        batch_id = batch_row['id']
-    else:
-        batch_cur = _db_execute(db,
-            'INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count) '
-            'VALUES (?, ?, ?, ?, ?)',
-            (category, sub_dept, filename, user['id'], len(employees)))
-        batch_id = batch_cur.lastrowid
+    batch_cur = _db_execute(db,
+        'INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count) '
+        'VALUES (?, ?, ?, ?, ?)',
+        (category, sub_dept, filename, user['id'], len(employees)))
+    batch_id = batch_cur.lastrowid
 
     # Update employees with batch_id
     _db_execute(db, 'UPDATE employees SET upload_batch_id = ? WHERE dept_id = ?', (batch_id, dept_id))
