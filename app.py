@@ -1157,15 +1157,15 @@ def api_upload():
     # Record upload batch
     if USE_POSTGRES:
         batch_row = _db_fetchone(db,
-            'INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count)
-            VALUES (?, ?, ?, ?, ?) RETURNING id',
-            (category, sub_dept, filename, user[\'id\'], len(employees)))
-        batch_id = batch_row[\'id\']
+            'INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count) '
+            'VALUES (?, ?, ?, ?, ?) RETURNING id',
+            (category, sub_dept, filename, user['id'], len(employees)))
+        batch_id = batch_row['id']
     else:
         batch_cur = _db_execute(db,
-            'INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count)
-            VALUES (?, ?, ?, ?, ?)',
-            (category, sub_dept, filename, user[\'id\'], len(employees)))
+            'INSERT INTO upload_batches (dept_category, sub_dept, filename, uploaded_by, employee_count) '
+            'VALUES (?, ?, ?, ?, ?)',
+            (category, sub_dept, filename, user['id'], len(employees)))
         batch_id = batch_cur.lastrowid
 
     # Update employees with batch_id
